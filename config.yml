@@ -12,5 +12,10 @@ AMQP_URI: pyamqp://guest:guest@rabbitmq
 
 WEB_SERVER_ADDRESS: "0.0.0.0:8000"
 
+
+# DB_URIS:
+#  transkrip_service: mysql+pymysql://transkrip_user:transkrip_pass@transkrip-db:3306/transkrip_db?charset=utf8mb4
+
 DB_URIS:
-  transkrip_service: mysql+pymysql://transkrip_user:transkrip_pass@transkrip-db:3306/transkrip_db?charset=utf8mb4
+  "transkrip_service:Base": mysql+pymysql://transkrip_user:transkrip_pass@transkrip-db:3306/transkrip_db?charset=utf8mb4
+

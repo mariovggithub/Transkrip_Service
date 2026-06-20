@@ -19,14 +19,14 @@
 
 version: '3.8'
 
-services:
-  mock-services:
-    build: .
-    command: nameko run --config config.yml mocks.mock_services
-    depends_on:
-      rabbitmq:
-        condition: service_healthy
-    volumes:
-      - .:/app
-    environment:
-      - NAMEKO_CONFIG=/app/config.yml
+#services:
+#  mock-services:
+#    build: .
+#    command: nameko run --config config.yml mocks.mock_services
+#    depends_on:
+#      rabbitmq:
+#        condition: service_healthy
+#    volumes:
+#      - .:/app
+#    environment:
+#      - NAMEKO_CONFIG=/app/config.yml

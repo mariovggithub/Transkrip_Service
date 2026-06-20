@@ -46,74 +46,76 @@ class TranskripService:
     # ═══════════════════════════════════════════════════════════
 
     @rpc
-    def push_prs_ke_krs(self, id_prs: int):
+    def push_semester_ke_krs(self, id_semester: int):
         """
-        Terima PRS yang sudah disetujui dari service PRS.
-        Membuat record KRS dan menginisialisasi Nilai kosong
-        untuk setiap mata kuliah yang ada dalam PRS tersebut.
+        Tarik semua peserta tervalidasi dari PRS untuk satu semester,
+        lalu buat KRS + Nilai kosong untuk masing-masing mahasiswa.
 
-        Dipanggil oleh: prs_service (otomatis setelah approval),
-        atau via HTTP gateway (POST /push_prs_ke_krs).
-
-        Args:
-            id_prs: ID PRS yang sudah disetujui
-
-        Returns:
-            {"status": "ok", "id_krs": int} jika berhasil
-            {"status": "error", "message": str} jika gagal
+        DIROMBAK: sebelumnya nerima id_prs satu-satu, sekarang nerima
+        id_semester dan proses banyak mahasiswa sekaligus — menyesuaikan
+        method PRS yang tersedia (push_peserta_to_transkrip), karena
+        PRS tidak punya method untuk lookup id_mahasiswa dari id_prs saja.
         """
-        if id_prs is None:
-            return {"status": "error", "message": "id_prs wajib diisi"}
+        if id_semester is None:
+            return {"status": "error", "message": "id_semester wajib diisi"}
 
-        try:
-            id_prs = int(id_prs)
-        except (TypeError, ValueError):
-            return {"status": "error", "message": "id_prs harus berupa angka"}
+        # Ambil data semester dari master_service (untuk nama semester + tahun ajaran)
+        semester_resp = self.master.get_semester_by_id(id_semester)
+        if semester_resp.get("status") != "success":
+            return {"status": "error", "message": f"Semester {id_semester} tidak ditemukan di master_service"}
+        semester_data = semester_resp["data"]
+        semester_nama = semester_data["name"]
+        tahun_ajaran  = str(semester_data["year"])
 
-        # Cek duplikasi: satu PRS hanya boleh punya satu KRS
-        existing = self.db.query(KRS).filter_by(id_prs=id_prs).first()
-        if existing:
-            return {"status": "error", "message": f"KRS untuk PRS {id_prs} sudah ada"}
+        # Ambil semua peserta tervalidasi dari PRS untuk semester ini
+        prs_resp = self.prs.push_peserta_to_transkrip(id_semester)
+        if "error" in prs_resp:
+            return {"status": "error", "message": prs_resp["error"]}
+        peserta_list = prs_resp.get("peserta", [])
 
-        # Ambil data PRS dari service PRS
-        # prs_data diharapkan berisi: id_mahasiswa, semester, tahun_ajaran
-        prs_data = self.prs.get_prs_by_id(id_prs)
-        if not prs_data:
-            return {"status": "error", "message": f"PRS {id_prs} tidak ditemukan"}
+        # Kelompokkan dulu per mahasiswa — satu mahasiswa bisa ambil banyak matkul,
+        # jadi satu KRS per mahasiswa, tapi banyak baris Nilai per KRS.
+        per_mahasiswa = {}
+        for peserta in peserta_list:
+            id_mhs = peserta["id_mahasiswa"]
+            per_mahasiswa.setdefault(id_mhs, []).append(peserta)
 
-        # Simpan id_mahasiswa, semester, tahun_ajaran langsung di KRS
-        # agar tidak perlu RPC ke PRS service setiap kali query.
-        krs = KRS(
-            id_prs       = id_prs,
-            id_mahasiswa = prs_data["id_mahasiswa"],
-            semester     = prs_data["semester"],
-            tahun_ajaran = prs_data["tahun_ajaran"],
-        )
-        self.db.add(krs)
-        self.db.flush()  # flush agar id_krs ter-generate sebelum dipakai di bawah
+        hasil = {"berhasil": [], "dilewati": []}
 
-        # Ambil detail PRS (daftar matkul yang diambil mahasiswa)
-        # prs_detail diharapkan berupa list of dict:
-        # [{"id_matkul": int, "id_kelas": int}, ...]
-        prs_detail = self.prs.get_prs_detail_by_prs_id(id_prs) or []
+        for id_mahasiswa, daftar_matkul in per_mahasiswa.items():
+            # Cek duplikasi: satu mahasiswa hanya boleh punya satu KRS per semester
+            existing = self.db.query(KRS).filter_by(
+                id_mahasiswa=id_mahasiswa, semester=semester_nama, tahun_ajaran=tahun_ajaran
+            ).first()
+            if existing:
+                hasil["dilewati"].append({"id_mahasiswa": id_mahasiswa, "alasan": "KRS sudah ada"})
+                continue
 
-        # Inisialisasi Nilai kosong untuk setiap matkul
-        for detail in prs_detail:
-            nilai = Nilai(
-                id_krs    = krs.id_krs,
-                id_matkul = detail["id_matkul"],
-                id_kelas  = detail["id_kelas"],
-                # Semua komponen None = belum diisi dosen
-                nilai_uts  = None,
-                nilai_uas  = None,
-                nilai_tes1 = None,
-                nilai_tes2 = None,
-                status     = StatusNilai.BELUM_TERNILAI,
+            krs = KRS(
+                id_mahasiswa = id_mahasiswa,
+                semester     = semester_nama,
+                tahun_ajaran = tahun_ajaran,
             )
-            self.db.add(nilai)
+            self.db.add(krs)
+            self.db.flush()  # supaya krs.id_krs ter-generate sebelum dipakai di bawah
+
+            for matkul in daftar_matkul:
+                nilai = Nilai(
+                    id_krs    = krs.id_krs,
+                    id_matkul = matkul["id_mata_kuliah"],   # field PRS: id_mata_kuliah -> field kita: id_matkul
+                    id_kelas  = matkul["id_kelas"],
+                    nilai_uts  = None,
+                    nilai_uas  = None,
+                    nilai_tes1 = None,
+                    nilai_tes2 = None,
+                    status     = StatusNilai.BELUM_TERNILAI,
+                )
+                self.db.add(nilai)
+
+            hasil["berhasil"].append({"id_mahasiswa": id_mahasiswa, "id_krs": krs.id_krs, "jumlah_matkul": len(daftar_matkul)})
 
         self.db.commit()
-        return {"status": "ok", "id_krs": krs.id_krs}
+        return {"status": "ok", **hasil}
 
     # ═══════════════════════════════════════════════════════════
     # BAGIAN 2: INPUT NILAI OLEH DOSEN
@@ -180,9 +182,10 @@ class TranskripService:
             krs = self.db.query(KRS).filter_by(id_krs=record.id_krs).first()
 
             # Ambil data matkul dari Master untuk mendapat SKS dan nama
-            matkul_data = self.master.get_matkul_by_id(record.id_matkul) or {}
+            matkul_resp = self.master.get_course_by_id(record.id_matkul)
+            matkul_data = matkul_resp.get("data", {}) if matkul_resp.get("status") == "success" else {}
             sks         = matkul_data.get("sks", 0)
-            nama_matkul = matkul_data.get("nama_matkul", f"Matkul #{record.id_matkul}")
+            nama_matkul = matkul_data.get("name", f"Matkul #{record.id_matkul}")
 
             # Buat/update KHS untuk KRS ini
             self._update_khs(krs, record, sks)
@@ -404,7 +407,8 @@ class TranskripService:
 
         # Ambil data mahasiswa dari Master service
         try:
-            mahasiswa = self.master.get_mahasiswa_by_id(id_mahasiswa)
+            mhs_resp = self.master.get_student_by_id(id_mahasiswa)
+            mahasiswa = mhs_resp.get("data", {"id_mahasiswa": id_mahasiswa}) if mhs_resp.get("status") == "success" else {"id_mahasiswa": id_mahasiswa}
         except Exception:
             mahasiswa = {"id_mahasiswa": id_mahasiswa}
 
@@ -488,7 +492,6 @@ class TranskripService:
         return [
             {
                 "id_krs":       k.id_krs,
-                "id_prs":       k.id_prs,
                 "id_mahasiswa": k.id_mahasiswa,
                 "semester":     k.semester,
                 "tahun_ajaran": k.tahun_ajaran,

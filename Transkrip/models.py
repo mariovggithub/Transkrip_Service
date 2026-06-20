@@ -5,7 +5,7 @@ Setiap class = satu tabel di database.
 SQLAlchemy akan otomatis buat tabel ini saat aplikasi pertama kali jalan.
 """
 
-from sqlalchemy import Column, Integer, String, Float, ForeignKey, Enum
+from sqlalchemy import Column, Integer, String, Float, ForeignKey, Enum, UniqueConstraint
 from sqlalchemy.ext.declarative import declarative_base
 import enum
 
@@ -31,12 +31,14 @@ class StatusNilai(str, enum.Enum):
 class KRS(Base):
     __tablename__ = "krs"
 
-    id_krs   = Column(Integer, primary_key=True, autoincrement=True)
-    id_prs   = Column(Integer, nullable=False, unique=True)  # Referensi ke PRS service
+    id_krs       = Column(Integer, primary_key=True, autoincrement=True)
     id_mahasiswa = Column(Integer, nullable=False)
     semester     = Column(String(10), nullable=False)
     tahun_ajaran = Column(String(10), nullable=False)
 
+    __table_args__ = (
+        UniqueConstraint("id_mahasiswa", "semester", "tahun_ajaran", name="unique_krs_mahasiswa_semester"),
+    )
 
 # ─────────────────────────────────────────────────────────────
 # NILAI

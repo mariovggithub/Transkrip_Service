@@ -29,22 +29,27 @@ class GatewayService:
     # ═══════════════════════════════════════════════════════════
     # PUSH PRS → KRS
     # ═══════════════════════════════════════════════════════════
-    @http("POST", "/push_prs_ke_krs")
-    def push_prs_ke_krs(self, request):
+    @http("POST", "/push_semester_ke_krs")
+    def push_semester_ke_krs(self, request):
         """
-        Endpoint HTTP untuk menerima push PRS dari service PRS.
+        Endpoint HTTP untuk tarik semua peserta PRS tervalidasi
+        dalam satu semester, lalu buat KRS + Nilai kosong untuk
+        masing-masing mahasiswa.
 
-        Body JSON: {"id_prs": 123}
+        Body JSON: {"id_semester": 2}
 
-        Dipanggil oleh service PRS setelah dosen wali approve PRS mahasiswa.
+        DIROMBAK dari /push_prs_ke_krs (per id_prs) menjadi
+        /push_semester_ke_krs (per id_semester, banyak mahasiswa
+        sekaligus) — menyesuaikan method yang tersedia di PRS
+        service (push_peserta_to_transkrip).
         """
         try:
             data = request.get_json(force=True)
-            id_prs = data["id_prs"]
+            id_semester = data["id_semester"]
         except (json.JSONDecodeError, KeyError, TypeError) as e:
             raise BadRequest(f"Invalid request body: {e}")
 
-        result = self.transkrip_rpc.push_prs_ke_krs(id_prs)
+        result = self.transkrip_rpc.push_semester_ke_krs(id_semester)
 
         if result.get("status") == "error":
             return Response(
