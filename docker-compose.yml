@@ -58,6 +58,9 @@ services:
       - .:/app
     env_file:
       - .env
+    environment:
+      - JWT_SECRET_KEY=abl_soa_finalProject
+      - NAMEKO_CONFIG=/app/config.yml
     networks:
       - sia_net
     restart: always

@@ -558,3 +558,53 @@ class TranskripService:
             }
             for k in krs_list
         ]
+    
+    @rpc
+    def push_prs_ke_krs(self, id_prs: int):
+        prs_data = self.prs.get_prs_by_id(id_prs)
+        if "error" in prs_data:
+            return {"status": "error", "message": prs_data["error"]}
+        id_mahasiswa = prs_data["id_mahasiswa"]
+        id_semester  = prs_data["id_semester"]
+        semester_resp = self.master.get_semester_by_id(id_semester)
+        if semester_resp.get("status") != "success":
+            return {"status": "error", "message": f"Semester {id_semester} tidak ditemukan"}
+        semester_nama = semester_resp["data"]["name"]
+        tahun_ajaran  = str(semester_resp["data"]["year"])
+        existing = self.db.query(KRS).filter_by(
+            id_mahasiswa=id_mahasiswa,
+            semester=semester_nama,
+            tahun_ajaran=tahun_ajaran
+        ).first()
+        if existing:
+            return {"status": "skipped", "message": "KRS sudah ada", "id_mahasiswa": id_mahasiswa}
+        krs = KRS(
+            id_mahasiswa=id_mahasiswa,
+            semester=semester_nama,
+            tahun_ajaran=tahun_ajaran,
+        )
+        self.db.add(krs)
+        self.db.flush()
+        details = self.prs.get_prs_detail_by_prs_id(id_prs)
+        if isinstance(details, dict) and "error" in details:
+            return {"status": "error", "message": details["error"]}
+        for detail in details:
+            nilai = Nilai(
+                id_krs       = krs.id_krs,
+                id_mahasiswa = id_mahasiswa,
+                id_matkul    = detail["id_mata_kuliah"],
+                id_kelas     = detail["id_kelas"],
+                nilai_uts    = None,
+                nilai_uas    = None,
+                nilai_tes1   = None,
+                nilai_tes2   = None,
+                status       = StatusNilai.BELUM_TERNILAI,
+            )
+            self.db.add(nilai)
+        self.db.commit()
+        return {
+            "status": "ok",
+            "id_mahasiswa": id_mahasiswa,
+            "id_krs": krs.id_krs,
+            "jumlah_matkul": len(details)
+        }
