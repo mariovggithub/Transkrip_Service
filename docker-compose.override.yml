@@ -1,22 +1,22 @@
 version: '3.8'
 
-services:
-  mock-services:
-    container_name: ms-transkrip-mock
-    build: .
-    command: nameko run --config config.yml mocks.mock_services
-    depends_on:
-      transkrip-db:
-        condition: service_healthy
-      rabbitmq:
-        condition: service_healthy
-    volumes:
-      - .:/app
-    env_file:
-      - .env
-    networks:
-      - sia_net
-    restart: always
+#services:
+#  mock-services:
+#    container_name: ms-transkrip-mock
+#    build: .
+#    command: nameko run --config config.yml mocks.mock_services
+#    depends_on:
+#      transkrip-db:
+#        condition: service_healthy
+#      rabbitmq:
+#        condition: service_healthy
+#    volumes:
+#      - .:/app
+#    env_file:
+#      - .env
+#    networks:
+#      - sia_net
+#    restart: always
 
 networks:
   sia_net:

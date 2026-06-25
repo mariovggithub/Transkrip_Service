@@ -1,0 +1,4 @@
+networks:
+  default:
+    name: sia_network
+    external: true
